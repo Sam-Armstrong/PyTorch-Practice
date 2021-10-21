@@ -1,99 +1,119 @@
 """
-Author: Sam Armstrong (based upon the research of (currently unknown author))
-Date: 13/10/2021
-Decription: PyTorch re-implementation of the 'ConvMixer' deep learning architecture that was described in the recent 
-paper 'Patches are all you need?' (2021)
+Exact re-implementation of the ConvMixer architecture from a recent paper for use in model comparison.
 """
 
-import torch
 import torch.nn as nn
-from Residual import Residual
+import torch
+import torch.optim as optim
 from torchvision import datasets
 from torchvision.transforms import ToTensor
-from torch.utils.data import DataLoader
-import torch.optim as optim
+from torch.utils.data import DataLoader, random_split
+import time
+import torch.optim.lr_scheduler as lr_s
 
-
-class ConvMixer(nn.Module):
-    def __init__(self, dim, depth, kernel_size = 7, patch_size = 4, n_classes = 10):
-        super(ConvMixer, self).__init__()
-        self.depth = depth
-
-        self.conv1 = nn.Conv2d(1, dim, kernel_size = patch_size, stride = patch_size)
-        self.gelu = nn.GELU()
-        self.batch_norm = nn.BatchNorm2d(dim)
-        self.residuals = []
-        self.conv2s = []
-        for i in range(depth):
-            self.residuals.append(Residual(dim, kernel_size))
-            self.conv2s.append(nn.Conv2d(dim, dim, kernel_size = 1))
-
-        self.conv2 = nn.Conv2d(dim, dim, kernel_size = 1)
-        self.residual = Residual(dim, kernel_size)
-
-        self.pool = nn.AdaptiveAvgPool2d((1, 1))
-        self.flatten = nn.Flatten()
-        self.fc = nn.Linear(dim, n_classes)
+class Res(nn.Module):
+    def __init__(self, fn):
+        super().__init__()
+        self.fn = fn
 
     def forward(self, x):
-        x = self.conv1(x)
-        x = self.gelu(x)
-        x = self.batch_norm(x)
-
-        x = self.residual(x)
-        x = self.conv2(x)
-        x = self.gelu(x)
-        x = self.batch_norm(x)
-
-        """x_matrix = torch.zeros((x.shape))
-
-        for i in range(self.depth):
-            x = self.residuals[i](x)
-            x = self.conv2s[i](x)
-            x = self.gelu(x)
-            x = self.batch_norm(x)
-            x_matrix += x"""
-        
-        x = self.pool(x)
-        x = self.flatten(x)
-        x = self.fc(x)
-
-        return x
+        return self.fn(x) + x
 
 
+def ConvMixer(dim, depth, kernel_size = 9, patch_size = 7, n_classes = 1000):
+    return nn.Sequential(
+        nn.Conv2d(1, dim, kernel_size = patch_size, stride = patch_size),
+        nn.GELU(),
+        nn.BatchNorm2d(dim),
+        *[nn.Sequential(
+            Res(
+                nn.Sequential(
+                    nn.Conv2d(dim, dim, kernel_size, groups = dim, padding = "same"),
+                    nn.GELU(),
+                    nn.BatchNorm2d(dim)
+                )),
+            nn.Conv2d(dim, dim, kernel_size = 1),
+            nn.GELU(),
+            nn.BatchNorm2d(dim)
+        ) for i in range(depth)],
+        nn.AdaptiveAvgPool2d((1, 1)),
+        nn.Flatten(),
+        nn.Linear(dim, n_classes),
+        nn.Softmax())
 
+
+
+start_time = time.time()
 
 num_epochs = 10
-
 device = torch.device('cpu')
 
 # Loads the train and test data into PyTorch tensors
 training_data = datasets.FashionMNIST(root = "data", train = True, download = True, transform = ToTensor())
 test_data = datasets.FashionMNIST(root = "data", train = False, download = True, transform = ToTensor())
+training_data, validation_set = random_split(training_data,[50000,10000])
 
-# Loads the data into batches
+# Loads the data into batches 
 train_dataloader = DataLoader(training_data, batch_size = 100, shuffle = True)
+valid_dataloader = DataLoader(validation_set, batch_size = 100, shuffle = True)
 test_dataloader = DataLoader(test_data, batch_size = 100, shuffle = True)
 
-model = ConvMixer(1, 1).to(device)
+model = ConvMixer(28, 1, kernel_size = 3, patch_size = 4, n_classes = 10).to(device)
 
-loss_f = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr = 0.0001)
+loss_f = nn.CrossEntropyLoss() #nn.MSELoss()#nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr = 0.01, weight_decay = 0)
+scheduler = lr_s.ReduceLROnPlateau(optimizer, 'min', patience = 2)
+
+old_loss = 10000
+times_worse = 0
 
 for epoch in range(num_epochs):
+    train_loss = 0.0
+
     for batch_idx, (data, labels) in enumerate(train_dataloader):
         data = data.to(device = device)
         labels = labels.to(device = device)
 
-        #data = data.reshape(data.shape[0], -1) # Flattens the data into a vector
+        #data = data.reshape(data.shape[0], -1) # Flattens the data into a long vector
 
         scores = model(data) # Runs a forward pass of the model for all the data
         loss = loss_f(scores, labels) # Calculates the loss of the forward pass using the loss function
+        train_loss += loss
 
         optimizer.zero_grad() # Resets the optimizer gradients to zero for each batch
         loss.backward() # Backpropagates the network using the loss to calculate the local gradients
 
         optimizer.step() # Updates the network weights and biases
+
+
+    valid_loss = 0.0
+    model.eval()
+    for data, labels in valid_dataloader:
+        if torch.cuda.is_available():
+            data, labels = data.cuda(), labels.cuda()
+        
+        target = model(data)
+        loss = loss_f(target,labels)
+        valid_loss = loss.item() * data.size(0)
+
+    scheduler.step(valid_loss)
+    print(valid_loss)
+
+    if valid_loss >= old_loss:
+        times_worse += 1
+    else:
+        times_worse = 0
+
+
+    if times_worse >= 2:
+        print('Reducing learning rate.')
+
+    if times_worse >= 3:
+        print('Stopping early.')
+        start_time = time.time()
+        break
+
+    old_loss = valid_loss
 
 
 # Checks the performance of the model on the test set
@@ -115,5 +135,7 @@ def check_accuracy(loader, model):
 
     print((num_correct * 100 / num_samples).item(), '%  Correct')
 
-
+print('\n')
 check_accuracy(test_dataloader, model)
+
+print('Finished in %s seconds' % round(time.time() - start_time, 1))
