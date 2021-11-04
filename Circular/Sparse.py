@@ -25,6 +25,7 @@ class Sparse(nn.Module):
         return x
 
     def sparse_forward(self, x):
+        x = x.reshape(x.shape[0], 784)
         y = torch.zeros((x.shape[0], self.output_size))
 
         for i in range(self.input_size):
