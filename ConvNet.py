@@ -11,41 +11,38 @@ from torch.utils.data import DataLoader, random_split
 import time
 import torch.optim.lr_scheduler as lr_s
 
-class Res(nn.Module):
-    def __init__(self, fn):
-        super().__init__()
-        self.fn = fn
+class ConvNet(nn.Module):
+    def __init__(self):
+        super(ConvNet, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels = 1, out_channels = 3, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
+        self.conv2 = nn.Conv2d(in_channels = 3, out_channels = 6, kernel_size = (3, 3), stride = (1, 1), padding = (1, 1))
+        self.fc1 = nn.Linear(4704, 2000)
+        self.fc2 = nn.Linear(2000, 10)
+        self.relu = nn.ReLU()
+        self.gelu = nn.GELU()
+        self.softmax = nn.Softmax(dim = 1)
+        self.bn1 = nn.BatchNorm1d(4704)
+        self.bn2 = nn.BatchNorm1d(2000)
 
     def forward(self, x):
-        return self.fn(x) + x
-
-
-def ConvMixer(dim, depth, kernel_size = 9, patch_size = 7, n_classes = 1000):
-    return nn.Sequential(
-        nn.Conv2d(1, dim, kernel_size = patch_size, stride = patch_size),
-        nn.GELU(),
-        nn.BatchNorm2d(dim),
-        *[nn.Sequential(
-            Res(
-                nn.Sequential(
-                    nn.Conv2d(dim, dim, kernel_size, groups = dim, padding = "same"),
-                    nn.GELU(),
-                    nn.BatchNorm2d(dim)
-                )),
-            nn.Conv2d(dim, dim, kernel_size = 1),
-            nn.GELU(),
-            nn.BatchNorm2d(dim)
-        ) for i in range(depth)],
-        nn.AdaptiveAvgPool2d((1, 1)),
-        nn.Flatten(),
-        nn.Linear(dim, n_classes),
-        nn.Softmax(dim = 0))
+        x = self.conv1(x)
+        x = self.gelu(x)
+        x = self.conv2(x)
+        x = self.gelu(x)
+        x = x.reshape(x.shape[0], -1) # Flattens the data into a long vector
+        x = self.bn1(x)
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.bn2(x)
+        x = self.fc2(x)
+        x = self.softmax(x)
+        return x
 
 
 
 start_time = time.time()
 
-num_epochs = 10
+num_epochs = 1
 device = torch.device('cpu')
 
 # Loads the train and test data into PyTorch tensors
@@ -58,7 +55,7 @@ train_dataloader = DataLoader(training_data, batch_size = 200, shuffle = True)
 valid_dataloader = DataLoader(validation_set, batch_size = 200, shuffle = True)
 test_dataloader = DataLoader(test_data, batch_size = 200, shuffle = True)
 
-model = ConvMixer(28, 1, kernel_size = 3, patch_size = 4, n_classes = 10).to(device)
+model = ConvNet().to(device)
 
 loss_f = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr = 0.001, weight_decay = 0)
