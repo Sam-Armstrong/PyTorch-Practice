@@ -55,12 +55,12 @@ def run_model():
 
             scores = model(new_data)
 
-            """image_array = scores[0].detach().numpy()
+            image_array = scores[0].detach().numpy()
             image_array = image_array.reshape(28, 28)
             data = Image.fromarray(image_array)
             data = Image.fromarray(np.uint8(cm.gist_earth(image_array)*255))
             #data.show()
-            data.save('Circ-Image.png')"""
+            data.save('Circ-Image.png')
 
             for i in range(batch_size):
                 for j in range(k):
