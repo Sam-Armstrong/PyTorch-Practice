@@ -1,9 +1,5 @@
-"""
-Exact re-implementation of the ConvMixer architecture from a recent paper for use in model comparison.
-"""
-
-import torch.nn as nn
 import torch
+import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets
 from torchvision.transforms import ToTensor
@@ -11,41 +7,87 @@ from torch.utils.data import DataLoader, random_split
 import time
 import torch.optim.lr_scheduler as lr_s
 
-class Res(nn.Module):
-    def __init__(self, fn):
-        super().__init__()
-        self.fn = fn
+class ExtConvMixer(nn.Module):
+    def __init__(self):
+        super(ExtConvMixer, self).__init__()
+
+        # Model parameters
+        dim = 28
+        patch_size = 2
+        kernel_size = 3
+        n_classes = 10
+
+        self.conv1 = nn.Conv2d(1, dim, kernel_size = patch_size, stride = patch_size) # Patch encoding
+        self.conv2 = nn.Conv2d(dim, dim, kernel_size, groups = dim, padding = "same") # Depthwise convolution
+        self.conv3 = nn.Conv2d(dim, dim, kernel_size = 1) # Pointwise convolution
+        self.conv4 = nn.Conv2d(dim, dim, kernel_size = patch_size, stride = patch_size) # Patch encoding
+        self.conv5 = nn.Conv2d(dim, dim, kernel_size, groups = dim, padding = "same") # Depthwise convolution
+        self.conv6 = nn.Conv2d(dim, dim, kernel_size = 1) # Pointwise convolution
+        
+        self.fc = nn.Linear(dim, n_classes)
+
+        self.bn1 = nn.BatchNorm2d(dim)
+        self.bn2 = nn.BatchNorm2d(dim)
+        self.bn3 = nn.BatchNorm2d(dim)
+        self.bn4 = nn.BatchNorm2d(dim)
+        self.bn5 = nn.BatchNorm2d(dim)
+        self.bn6 = nn.BatchNorm2d(dim)
+
+        self.gelu = nn.GELU()
+        self.relu = nn.ReLU()
+        self.softmax = nn.Softmax(dim = 1)
+
+        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.flatten = nn.Flatten()
 
     def forward(self, x):
-        return self.fn(x) + x
+        # Patch encoding
+        x = self.conv1(x)
+        x = self.gelu(x)
+        x = self.bn1(x)
 
+        # Residual
+        y = x.detach().clone()
+        x = self.conv2(x)
+        x = self.gelu(x)
+        x = self.bn2(x)
+        x += y
 
-def ConvMixer(dim, depth, kernel_size = 9, patch_size = 7, n_classes = 1000):
-    return nn.Sequential(
-        nn.Conv2d(1, dim, kernel_size = patch_size, stride = patch_size),
-        nn.GELU(),
-        nn.BatchNorm2d(dim),
-        *[nn.Sequential(
-            Res(
-                nn.Sequential(
-                    nn.Conv2d(dim, dim, kernel_size, groups = dim, padding = "same"),
-                    nn.GELU(),
-                    nn.BatchNorm2d(dim)
-                )),
-            nn.Conv2d(dim, dim, kernel_size = 1),
-            nn.GELU(),
-            nn.BatchNorm2d(dim)
-        ) for i in range(depth)],
-        nn.AdaptiveAvgPool2d((1, 1)),
-        nn.Flatten(),
-        nn.Linear(dim, n_classes),
-        nn.Softmax(dim = 0))
+        # Pointwise convolution
+        x = self.conv3(x)
+        x = self.gelu(x)
+        x = self.bn3(x)
+
+        """# Patch encoding
+        x = self.conv4(x)
+        x = self.gelu(x)
+        x = self.bn4(x)
+
+        # Residual
+        y = x.detach().clone()
+        x = self.conv5(x)
+        x = self.gelu(x)
+        x = self.bn5(x)
+        x += y
+
+        # Pointwise convolution
+        x = self.conv6(x)
+        x = self.gelu(x)
+        x = self.bn6(x)"""
+
+        # Average pool and linear for classification
+        x = self.avg_pool(x)
+        x = self.flatten(x)
+        x = self.fc(x)
+        x = self.softmax(x)
+
+        return x
 
 
 
 start_time = time.time()
 
-num_epochs = 10
+num_epochs = 20
 device = torch.device('cpu')
 
 # Loads the train and test data into PyTorch tensors
@@ -58,25 +100,23 @@ train_dataloader = DataLoader(training_data, batch_size = 200, shuffle = True)
 valid_dataloader = DataLoader(validation_set, batch_size = 200, shuffle = True)
 test_dataloader = DataLoader(test_data, batch_size = 200, shuffle = True)
 
-model = ConvMixer(28, 1, kernel_size = 3, patch_size = 4, n_classes = 10).to(device)
+model = ExtConvMixer().to(device)
 
-loss_f = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr = 0.001, weight_decay = 0)
+loss_f = nn.CrossEntropyLoss() #nn.MSELoss()#nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr = 0.0001, weight_decay = 0)
 scheduler = lr_s.ReduceLROnPlateau(optimizer, 'min', patience = 2)
 
 old_loss = 10000
 times_worse = 0
 
 for epoch in range(num_epochs):
-    train_loss = 0.0
     print(epoch)
+    train_loss = 0.0
 
     for batch_idx, (data, labels) in enumerate(train_dataloader):
+        #print(batch_idx)
         data = data.to(device = device)
         labels = labels.to(device = device)
-        #print(batch_idx)
-
-        #data = data.reshape(data.shape[0], -1) # Flattens the data into a long vector
 
         scores = model(data) # Runs a forward pass of the model for all the data
         loss = loss_f(scores, labels) # Calculates the loss of the forward pass using the loss function
@@ -107,10 +147,10 @@ for epoch in range(num_epochs):
         times_worse = 0
 
 
-    if times_worse >= 3:
+    if times_worse >= 2:
         print('Reducing learning rate.')
 
-    if times_worse >= 5:
+    if times_worse >= 3:
         print('Stopping early.')
         start_time = time.time()
         break
