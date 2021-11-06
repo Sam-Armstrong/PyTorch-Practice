@@ -1,5 +1,5 @@
 """
-Exact re-implementation of the ConvMixer architecture from a recent paper for use in model comparison.
+Convolutional neural network architecture for classification of the MNIST dataset
 """
 
 import torch.nn as nn
@@ -29,7 +29,7 @@ class ConvNet(nn.Module):
         x = self.gelu(x)
         x = self.conv2(x)
         x = self.gelu(x)
-        x = x.reshape(x.shape[0], -1) # Flattens the data into a long vector
+        x = x.reshape(x.shape[0], -1)
         x = self.bn1(x)
         x = self.fc1(x)
         x = self.relu(x)
