@@ -10,17 +10,17 @@ from torchvision.transforms import ToTensor
 from torch.utils.data import DataLoader, random_split
 import time
 import torch.optim.lr_scheduler as lr_s
-from ConvNewCircular import ConvNewCircular
+from CifarCircular import CifarCircular
 
-class ConvFFCircular(nn.Module):
+class CifarFFCircular(nn.Module):
     def __init__(self):
-        super(ConvFFCircular, self).__init__()
-        self.fc4 = nn.Linear(2500, 10)
-        self.softmax = nn.Softmax(dim = 1)
+        super(CifarFFCircular, self).__init__()
+        self.fc4 = nn.Linear(2000, 10)
+        self.softmax = nn.Softmax(dim = -1)
         self.gelu = nn.GELU()
 
-        model = ConvNewCircular()
-        model.load_state_dict(torch.load('new-circular.pickle'))
+        model = CifarCircular()
+        model.load_state_dict(torch.load('cifar-circular.pickle'))
         model.eval()
         self.fc1 = model.fc1
         self.fc2 = model.fc2
@@ -30,13 +30,16 @@ class ConvFFCircular(nn.Module):
         self.bn3 = model.bn3
         self.conv1 = model.conv1
         self.conv2 = model.conv2
+        self.conv5 = model.conv5
         
 
     def forward(self, x):
+        x = self.conv5(x)
+        x = self.gelu(x)
         x = self.conv1(x)
         x = self.gelu(x)
-        x = self.conv2(x)
-        x = self.gelu(x)
+        #x = self.conv2(x)
+        #x = self.gelu(x)
 
         x = x.reshape(x.shape[0], -1)
         
@@ -61,13 +64,18 @@ class ConvFFCircular(nn.Module):
 
 start_time = time.time()
 
-num_epochs = 5
+num_epochs = 4
 device = torch.device('cpu')
 
+#training_data = datasets.CelebA(root = "data", split = "train", download = True, transform = ToTensor())
+#test_data = datasets.CelebA(root = "data", split = "test", download = True, transform = ToTensor())
+#print(training_data.shape)
+
 # Loads the train and test data into PyTorch tensors
-training_data = datasets.MNIST(root = "data", train = True, download = True, transform = ToTensor())
-test_data = datasets.MNIST(root = "data", train = False, download = True, transform = ToTensor())
-training_data, validation_set = random_split(training_data,[50000,10000])
+training_data = datasets.CIFAR10(root = "data", train = True, download = True, transform = ToTensor())
+test_data = datasets.CIFAR10(root = "data", train = False, download = True, transform = ToTensor())
+
+training_data, validation_set = random_split(training_data, [45000, 5000])
 
 # Loads the data into batches 
 train_dataloader = DataLoader(training_data, batch_size = 200, shuffle = True)
@@ -75,11 +83,11 @@ valid_dataloader = DataLoader(validation_set, batch_size = 200, shuffle = True)
 test_dataloader = DataLoader(test_data, batch_size = 200, shuffle = True)
 
 
-model = ConvFFCircular().to(device)
+model = CifarFFCircular().to(device)
 
 # Prevents additional training or pre-trained layers
 for param in model.parameters():
-    if param.shape == torch.Size([10, 2500]) or param.shape == torch.Size([10]):
+    if param.shape == torch.Size([10, 2000]) or param.shape == torch.Size([10]):
         pass
     else:
         param.requires_grad = False
@@ -97,7 +105,7 @@ for epoch in range(num_epochs):
 
     for batch_idx, (data, labels) in enumerate(train_dataloader):
         #print(batch_idx)
-        #print(model.conv1.weight)
+        #print(model.fc4.weight)
 
         data = data.to(device = device)
         labels = labels.to(device = device)
