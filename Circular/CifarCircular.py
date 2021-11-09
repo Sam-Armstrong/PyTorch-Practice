@@ -7,6 +7,7 @@ Description:
 
 import torch.nn as nn
 import torch
+from torch.nn.modules import flatten
 import torch.optim as optim
 from torchvision import datasets
 from torchvision.transforms import ToTensor
@@ -21,23 +22,43 @@ class CifarCircular(nn.Module):
         self.gelu = nn.GELU()
         self.relu = nn.ReLU()
         self.softmax = nn.Softmax(dim = 1)
-        self.bn1 = nn.BatchNorm1d(1500)
-        self.bn2 = nn.BatchNorm1d(2000)
-        self.bn3 = nn.BatchNorm1d(2000)
+        #self.bn1 = nn.BatchNorm1d(1500)
+        #self.bn2 = nn.BatchNorm1d(2000)
+        #self.bn3 = nn.BatchNorm1d(2000)
+
+        self.bn1 = nn.BatchNorm2d(6)
+        self.bn2 = nn.BatchNorm2d(6)
+        self.bn3 = nn.BatchNorm2d(6)
+        self.bn4 = nn.BatchNorm2d(12)
+        self.bn5 = nn.BatchNorm2d(12)
+        self.bn6 = nn.BatchNorm2d(12)
+
+        self.bn7 = nn.BatchNorm2d(12)
+        self.bn8 = nn.BatchNorm2d(12)
+        self.bn9 = nn.BatchNorm2d(6)
+        self.bn10 = nn.BatchNorm2d(6)
+        self.bn11 = nn.BatchNorm2d(6)
 
         self.dropout = nn.Dropout(p = 0.5)
 
-        self.fc1 = nn.Linear(768, 1500)
-        self.fc2 = nn.Linear(1500, 2000)
-        self.fc3 = nn.Linear(2000, 2000)
-        self.fc4 = nn.Linear(2000, 3072)
+        self.fc1 = nn.Linear(768, 3072)
 
-        self.conv5 = nn.Conv2d(3, 3, kernel_size = 2, padding = 0, stride = 2) # Patch encoding
-        self.conv1 = nn.Conv2d(3, 3, kernel_size = 3, padding = 1)
-        self.conv2 = nn.Conv2d(3, 3, kernel_size = 3, padding = 1)
+        self.conv1 = nn.Conv2d(3, 6, kernel_size = 3, padding = 1)
+        self.conv2 = nn.Conv2d(6, 6, kernel_size = 3, padding = 1)
+        self.conv3 = nn.Conv2d(6, 6, kernel_size = 2, padding = 0, stride = 2) # Patch encoding
+        self.conv4 = nn.Conv2d(6, 12, kernel_size = 3, padding = 1)
+        self.conv5 = nn.Conv2d(12, 12, kernel_size = 3, padding = 1)
+        self.conv6 = nn.Conv2d(12, 12, kernel_size = 2, padding = 0, stride = 2) # Patch encoding
 
-        self.conv3 = nn.Conv2d(3, 3, kernel_size = 3, padding = 1)
-        self.conv4 = nn.Conv2d(3, 3, kernel_size = 1, padding = 0)
+        self.deconv1 = nn.ConvTranspose2d(12, 12, kernel_size = 2, padding = 0, stride = 2)
+        self.deconv2 = nn.ConvTranspose2d(12, 12, kernel_size = 3, padding = 1)
+        self.deconv3 = nn.ConvTranspose2d(12, 6, kernel_size = 3, padding = 1)
+        self.deconv4 = nn.ConvTranspose2d(6, 6, kernel_size = 2, padding = 0, stride = 2)
+        self.deconv5 = nn.ConvTranspose2d(6, 6, kernel_size = 3, padding = 1)
+        self.deconv6 = nn.ConvTranspose2d(6, 3, kernel_size = 3, padding = 1)
+
+        #self.conv7 = nn.Conv2d(3, 3, kernel_size = 3, padding = 1)
+        #self.conv8 = nn.Conv2d(3, 3, kernel_size = 1, padding = 0)
 
     def forward(self, x):
         #x = x.reshape(x.shape[0], -1) # Flattens data
@@ -46,40 +67,65 @@ class CifarCircular(nn.Module):
         x = self.dropout(x)
 
         # Propagating forwards into the network
-        x = self.conv5(x)
-        x = self.gelu(x)
-        
         x = self.conv1(x)
         x = self.gelu(x)
-
-        #x = self.conv2(x)
-        #x = self.gelu(x)
-
-        x = x.reshape(x.shape[0], -1)
-
-        x = self.fc1(x)
-        x = self.gelu(x)
         x = self.bn1(x)
-
-        x = self.fc2(x)
+        
+        x = self.conv2(x)
         x = self.gelu(x)
         x = self.bn2(x)
 
-        # Self-comparison layer (central layer training with relation to itself)
-        x = self.fc3(x)
-        x = self.gelu(x)
-        x = self.bn3(x)
-        
-        # Neuron gradients then propagate back through the network to the input layer
-        x = self.fc4(x)
-        x = self.gelu(x)
-
-        x = x.reshape(x.shape[0], 3, 32, 32)
-
         x = self.conv3(x)
         x = self.gelu(x)
+        x = self.bn3(x)
 
         x = self.conv4(x)
+        x = self.gelu(x)
+        x = self.bn4(x)
+        
+        x = self.conv5(x)
+        x = self.gelu(x)
+        x = self.bn5(x)
+
+        x = self.conv6(x)
+        x = self.gelu(x)
+        x = self.bn6(x)
+
+        x = self.deconv1(x)
+        x = self.gelu(x)
+        x = self.bn7(x)
+
+        x = self.deconv2(x)
+        x = self.gelu(x)
+        x = self.bn8(x)
+
+        x = self.deconv3(x)
+        x = self.gelu(x)
+        x = self.bn9(x)
+
+        x = self.deconv4(x)
+        x = self.gelu(x)
+        x = self.bn10(x)
+        
+        x = self.deconv5(x)
+        x = self.gelu(x)
+        x = self.bn11(x)
+
+        x = self.deconv6(x)
+
+        #x = x.reshape(x.shape[0], -1)
+
+        #x = self.fc1(x)
+        #x = self.gelu(x)
+
+        #x = x.reshape(x.shape[0], 3, 32, 32)
+        
+
+        """x = self.conv7(x)
+        x = self.gelu(x)
+
+        x = self.conv8(x)"""
+        
         x = self.relu(x) # Last activation is relu to better approximate the input values
 
         x = x.reshape(x.shape[0], -1)
@@ -90,17 +136,17 @@ class CifarCircular(nn.Module):
 def train_model():
     start_time = time.time()
 
-    num_epochs = 3
+    num_epochs = 30
     device = torch.device('cpu')
 
     # Loads the train and test data into PyTorch tensors
     training_data = datasets.CIFAR10(root = "data", train = True, download = True, transform = ToTensor())
     test_data = datasets.CIFAR10(root = "data", train = False, download = True, transform = ToTensor())
-    #training_data, validation_set = random_split(training_data,[45000,5000])
+    training_data, validation_set = random_split(training_data, [45000, 5000])
 
     # Loads the data into batches
     train_dataloader = DataLoader(training_data, batch_size = 200, shuffle = True)
-    #valid_dataloader = DataLoader(validation_set, batch_size = 200, shuffle = True)
+    valid_dataloader = DataLoader(validation_set, batch_size = 200, shuffle = True)
     test_dataloader = DataLoader(test_data, batch_size = 200, shuffle = True)
 
     model = CifarCircular().to(device)
@@ -109,8 +155,8 @@ def train_model():
     params += model.parameters()
 
     loss_f = nn.MSELoss()
-    optimizer = optim.Adam(params, lr = 0.0001, weight_decay = 0)
-    scheduler = lr_s.ReduceLROnPlateau(optimizer, 'min', patience = 2)
+    optimizer = optim.Adam(params, lr = 0.00003, weight_decay = 0)
+    scheduler = lr_s.ReduceLROnPlateau(optimizer, 'min', patience = 3)
 
     old_loss = 10000
     times_worse = 0
@@ -137,6 +183,38 @@ def train_model():
             optimizer.step() # Updates the network weights and biases
 
         print('Training Loss: ', train_loss)
+
+        valid_loss = 0.0
+        model.eval()
+        for data, labels in valid_dataloader:
+            if torch.cuda.is_available():
+                data, labels = data.cuda(), labels.cuda()
+            
+            target = model(data)
+
+            flattened = data.clone().detach().reshape(data.shape[0], -1)
+            loss = loss_f(target, flattened)
+            valid_loss = loss.item() * data.size(0)
+
+        scheduler.step(valid_loss)
+        print('Validation Loss: ', valid_loss)
+
+        if valid_loss >= old_loss:
+            times_worse += 1
+
+        else:
+            times_worse = 0
+
+
+        if times_worse >= 3:
+            print('Reducing learning rate.')
+
+        if times_worse >= 6:
+            print('Stopping early.')
+            start_time = time.time()
+            break
+
+        old_loss = valid_loss
 
 
     torch.save(model.state_dict(), 'cifar-circular.pickle')

@@ -17,10 +17,75 @@ class ControlModel(nn.Module):
         self.fc = nn.Linear(3072, 10)
         self.softmax = nn.Softmax(dim = 1)
 
+        self.conv1 = nn.Conv2d(3, 6, kernel_size = 3, padding = 1)
+        self.conv2 = nn.Conv2d(6, 6, kernel_size = 3, padding = 1)
+        self.conv3 = nn.Conv2d(6, 6, kernel_size = 2, padding = 0, stride = 2) # Patch encoding
+        self.conv4 = nn.Conv2d(6, 12, kernel_size = 3, padding = 1)
+        self.conv5 = nn.Conv2d(12, 12, kernel_size = 3, padding = 1)
+        self.conv6 = nn.Conv2d(12, 12, kernel_size = 2, padding = 0, stride = 2) # Patch encoding
+
+        self.gelu = nn.GELU()
+        self.relu = nn.ReLU()
+        self.softmax = nn.Softmax(dim = 1)
+
+        self.bn1 = nn.BatchNorm2d(6)
+        self.bn2 = nn.BatchNorm2d(6)
+        self.bn3 = nn.BatchNorm2d(6)
+        self.bn4 = nn.BatchNorm2d(12)
+        self.bn5 = nn.BatchNorm2d(12)
+        self.bn6 = nn.BatchNorm2d(12)
+        self.bn7 = nn.BatchNorm1d(400)
+        self.bn8 = nn.BatchNorm1d(100)
+
+        self.pooling1 = nn.MaxPool2d(kernel_size = 2)
+        self.pooling2 = nn.MaxPool2d(kernel_size = 2)
+
+        self.fc1 = nn.Linear(768, 400)
+        self.fc2 = nn.Linear(400, 100)
+        self.fc3 = nn.Linear(100, 10)
+
     def forward(self, x):
+        x = self.conv1(x)
+        x = self.gelu(x)
+        x = self.bn1(x)
+
+        x = self.conv2(x)
+        x = self.gelu(x)
+        x = self.bn2(x)
+
+        # x = self.conv3(x)
+        # x = self.gelu(x)
+        # x = self.bn3(x)
+
+        x = self.pooling1(x)
+
+        x = self.conv4(x)
+        x = self.gelu(x)
+        x = self.bn4(x)
+
+        x = self.conv5(x)
+        x = self.gelu(x)
+        x = self.bn5(x)
+
+        # x = self.conv6(x)
+        # x = self.gelu(x)
+        # x = self.bn6(x)
+
+        x = self.pooling2(x)
+
         x = x.reshape(x.shape[0], -1)
-        x = self.fc(x)
+
+        x = self.fc1(x)
+        x = self.gelu(x)
+        x = self.bn7(x)
+
+        x = self.fc2(x)
+        x = self.gelu(x)
+        x = self.bn8(x)
+
+        x = self.fc3(x)
         x = self.softmax(x)
+
         return x
 
 
@@ -45,8 +110,8 @@ def run_model():
     model = ControlModel().to(device)
 
     loss_f = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr = 0.00001, weight_decay = 0)
-    scheduler = lr_s.ReduceLROnPlateau(optimizer, 'min', patience = 2)
+    optimizer = optim.Adam(model.parameters(), lr = 0.00003, weight_decay = 0)
+    scheduler = lr_s.ReduceLROnPlateau(optimizer, 'min', patience = 3)
 
     old_loss = 10000
     times_worse = 0
@@ -89,10 +154,10 @@ def run_model():
             times_worse = 0
 
 
-        if times_worse >= 2:
+        if times_worse >= 3:
             print('Reducing learning rate.')
 
-        if times_worse >= 3:
+        if times_worse >= 6:
             print('Stopping early.')
             start_time = time.time()
             break
