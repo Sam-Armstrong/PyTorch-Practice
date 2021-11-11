@@ -15,31 +15,23 @@ from torch.utils.data import DataLoader, random_split
 import time
 import torch.optim.lr_scheduler as lr_s
 
-class CifarCircular(nn.Module):
+class CifarCircular2(nn.Module):
     def __init__(self):
-        super(CifarCircular, self).__init__()
+        super(CifarCircular2, self).__init__()
         #self.fc = nn.Linear(784, 10)
         self.gelu = nn.GELU()
         self.relu = nn.ReLU()
         self.softmax = nn.Softmax(dim = 1)
 
-        # self.bn1 = nn.BatchNorm2d(6)
-        # self.bn2 = nn.BatchNorm2d(12)
-        # self.bn3 = nn.BatchNorm2d(12)
-        # self.bn4 = nn.BatchNorm2d(12)
-        # self.bn5 = nn.BatchNorm2d(12)
-        # self.bn6 = nn.BatchNorm2d(12)
-
-        # self.bn7 = nn.BatchNorm2d(12)
-        # self.bn8 = nn.BatchNorm2d(12)
-        # self.bn9 = nn.BatchNorm2d(6)
-        # self.bn10 = nn.BatchNorm2d(6)
-        # self.bn11 = nn.BatchNorm2d(6)
-
         self.bn1 = nn.BatchNorm1d(5000)
         self.bn2 = nn.BatchNorm1d(10000)
         self.bn3 = nn.BatchNorm1d(10000)
         self.bn4 = nn.BatchNorm1d(5000)
+
+        self.convbn1 = nn.BatchNorm2d(9)
+        self.convbn2 = nn.BatchNorm2d(18)
+        self.convbn3 = nn.BatchNorm2d(18)
+        self.convbn4 = nn.BatchNorm2d(18)
 
         self.dropout = nn.Dropout(p = 0.5)
 
@@ -53,7 +45,7 @@ class CifarCircular(nn.Module):
         self.conv10 = nn.Conv2d(3, 6, kernel_size = 3, padding = 1)
         self.conv11 = nn.Conv2d(6, 3, kernel_size = 1, padding = 0)
 
-        self.fc1 = nn.Linear(4608, 5000)
+        self.fc1 = nn.Linear(18432, 5000) # 18432 # 4608
         self.fc2 = nn.Linear(5000, 10000)
         self.fc3 = nn.Linear(10000, 10000)
         self.fc4 = nn.Linear(10000, 5000)
@@ -68,37 +60,41 @@ class CifarCircular(nn.Module):
         # Propagating forwards into the network
         x = self.conv1(x)
         x = self.gelu(x)
+        x = self.convbn1(x)
 
         x = self.conv2(x)
         x = self.gelu(x)
+        x = self.convbn2(x)
 
-        x = self.pooling(x)
+        #x = self.pooling(x)
 
         x = self.conv3(x)
         x = self.gelu(x)
+        x = self.convbn3(x)
 
         x = self.conv4(x)
         x = self.gelu(x)
+        x = self.convbn4(x)
 
         x = x.reshape(x.shape[0], -1)
 
         x = self.fc1(x)
         x = self.gelu(x)
-        x = self.bn1(x)
+        #x = self.bn1(x)
 
         x = self.fc2(x)
         x = self.gelu(x)
-        x = self.bn2(x)
+        #x = self.bn2(x)
 
         # Self-comparison layer (central layer training with relation to itself)
         x = self.fc3(x)
         x = self.gelu(x)
-        x = self.bn3(x)
+        #x = self.bn3(x)
         
         # Neuron gradients then propagate back through the network to the input layer
         x = self.fc4(x)
         x = self.gelu(x)
-        x = self.bn4(x)
+        #x = self.bn4(x)
 
         x = self.fc5(x)
         x = self.gelu(x)
@@ -132,13 +128,13 @@ def train_model():
     valid_dataloader = DataLoader(validation_set, batch_size = 500, shuffle = True)
     test_dataloader = DataLoader(test_data, batch_size = 1000, shuffle = True)
 
-    model = CifarCircular().to(device)
+    model = CifarCircular2().to(device)
 
     params = []
     params += model.parameters()
 
     loss_f = nn.MSELoss()
-    optimizer = optim.Adam(params, lr = 0.0001, weight_decay = 0)
+    optimizer = optim.AdamW(params, lr = 0.0001, weight_decay = 0)
     scheduler = lr_s.ReduceLROnPlateau(optimizer, 'min', patience = 3)
 
     old_loss = 10000

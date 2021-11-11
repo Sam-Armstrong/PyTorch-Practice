@@ -10,11 +10,11 @@ from torchvision.transforms import ToTensor
 from torch.utils.data import DataLoader, random_split
 import time
 import torch.optim.lr_scheduler as lr_s
-from CifarCircular import CifarCircular
+from CifarCircular2 import CifarCircular2
 
-class CifarFFCircular(nn.Module):
+class CifarFFCircular2(nn.Module):
     def __init__(self):
-        super(CifarFFCircular, self).__init__()
+        super(CifarFFCircular2, self).__init__()
 
         self.dropout = nn.Dropout(p = 0.5)
 
@@ -28,7 +28,7 @@ class CifarFFCircular(nn.Module):
         self.softmax = nn.Softmax(dim = -1)
         self.gelu = nn.GELU()
 
-        model = CifarCircular()
+        model = CifarCircular2()
         model.load_state_dict(torch.load('cifar-circular.pickle'))
         model.eval()
 
@@ -36,6 +36,11 @@ class CifarFFCircular(nn.Module):
         self.bn2 = model.bn2
         self.bn3 = model.bn3
         self.bn4 = model.bn4
+
+        self.convbn1 = model.convbn1
+        self.convbn2 = model.convbn2
+        self.convbn3 = model.convbn3
+        self.convbn4 = model.convbn4
 
         self.conv1 = model.conv1
         self.conv2 = model.conv2
@@ -54,33 +59,32 @@ class CifarFFCircular(nn.Module):
     def forward(self, x):
         x = self.conv1(x)
         x = self.gelu(x)
+        x = self.convbn1(x)
 
         x = self.conv2(x)
         x = self.gelu(x)
+        x = self.convbn2(x)
 
-        x = self.pooling(x)
+        #x = self.pooling(x)
 
         x = self.conv3(x)
         x = self.gelu(x)
+        x = self.convbn3(x)
 
         x = self.conv4(x)
         x = self.gelu(x)
+        x = self.convbn4(x)
 
         x = x.reshape(x.shape[0], -1)
 
         x = self.fc1(x)
         x = self.gelu(x)
-        x = self.bn1(x)
 
         x = self.fc2(x)
         x = self.gelu(x)
-        x = self.bn2(x)
 
         x = self.fc3(x)
         x = self.gelu(x)
-        x = self.bn3(x)
-
-        x = x.reshape(x.shape[0], -1)
 
         x = self.fc(x)
         x = self.softmax(x)
@@ -104,7 +108,7 @@ valid_dataloader = DataLoader(validation_set, batch_size = 500, shuffle = True)
 test_dataloader = DataLoader(test_data, batch_size = 500, shuffle = True)
 
 
-model = CifarFFCircular().to(device)
+model = CifarFFCircular2().to(device)
 
 trainable_shapes = [torch.Size([10, 10000]), torch.Size([10])]
 
@@ -116,7 +120,7 @@ for param in model.parameters():
         param.requires_grad = False
 
 loss_f = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr = 0.000003, weight_decay = 0)
+optimizer = optim.AdamW(model.parameters(), lr = 0.000003, weight_decay = 0)
 scheduler = lr_s.ReduceLROnPlateau(optimizer, 'min', patience = 3)
 
 old_loss = 10000
