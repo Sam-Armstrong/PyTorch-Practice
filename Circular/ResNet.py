@@ -151,7 +151,7 @@ args = parser.parse_args()
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-print('==> Preparing data..')
+#print('==> Preparing data..')
 transforms_train = transforms.Compose([
 	transforms.RandomCrop(32, padding=4),
 	transforms.RandomHorizontalFlip(),
@@ -164,9 +164,9 @@ transforms_test = transforms.Compose([
 ])
 
 dataset_train = CIFAR10(root='../data', train=True, 
-						download=True, transform=transforms_train)
+						download=False, transform=transforms_train)
 dataset_test = CIFAR10(root='../data', train=False, 
-					   download=True, transform=transforms_test)
+					   download=False, transform=transforms_test)
 train_loader = DataLoader(dataset_train, batch_size=args.batch_size, 
 	                      shuffle=True, num_workers=args.num_worker)
 test_loader = DataLoader(dataset_test, batch_size=args.batch_size_test, 
@@ -176,12 +176,12 @@ test_loader = DataLoader(dataset_test, batch_size=args.batch_size_test,
 classes = ('plane', 'car', 'bird', 'cat', 'deer', 
 	       'dog', 'frog', 'horse', 'ship', 'truck')
 
-print('==> Making model..')
+#print('==> Making model..')
 
 net = resnet()
 net = net.to(device)
 num_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
-print('The number of parameters of model is', num_params)
+#print('The number of parameters of model is', num_params)
 # print(net)
 
 if args.resume is not None:
@@ -189,8 +189,7 @@ if args.resume is not None:
 	net.load_state_dict(checkpoint['net'])
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(net.parameters(), lr=0.1, 
-	                  momentum=0.9, weight_decay=1e-4)
+optimizer = optim.SGD(net.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4)
 
 decay_epoch = [32000, 48000]
 step_lr_scheduler = lr_scheduler.MultiStepLR(optimizer, 
@@ -256,7 +255,7 @@ def test(epoch, best_acc, global_steps):
 	#writer.add_scalar('log/test error', 100 - acc, global_steps)
     
 	if acc > best_acc:
-		print('==> Saving model..')
+		#print('==> Saving model..')
 		state = {
 		    'net': net.state_dict(),
 		    'acc': acc,
