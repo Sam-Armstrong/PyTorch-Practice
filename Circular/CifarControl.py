@@ -19,13 +19,13 @@ class ControlModel(nn.Module):
 
         self.conv1 = nn.Conv2d(3, 6, kernel_size = 3, padding = 1)
         self.conv2 = nn.Conv2d(6, 6, kernel_size = 3, padding = 1)
-        self.conv3 = nn.Conv2d(6, 6, kernel_size = 2, padding = 0, stride = 2) # Patch encoding
+        self.conv3 = nn.Conv2d(6, 6, kernel_size = 3, padding = 1)
         self.conv4 = nn.Conv2d(6, 12, kernel_size = 3, padding = 1)
         self.conv5 = nn.Conv2d(12, 12, kernel_size = 3, padding = 1)
-        self.conv6 = nn.Conv2d(12, 12, kernel_size = 2, padding = 0, stride = 2) # Patch encoding
-        
-        self.conv7 = nn.Conv2d(12, 12, kernel_size = 3, padding = 1)
-        self.conv8 = nn.Conv2d(12, 12, kernel_size = 3, padding = 1)
+        self.conv6 = nn.Conv2d(12, 12, kernel_size = 3, padding = 1)
+
+        self.patch1 = nn.Conv2d(6, 6, kernel_size = 2, stride = 2, padding = 0)
+        self.patch2 = nn.Conv2d(12, 12, kernel_size = 2, stride = 2, padding = 0)
 
         self.gelu = nn.GELU()
         self.relu = nn.ReLU()
@@ -42,8 +42,7 @@ class ControlModel(nn.Module):
         self.bn9 = nn.BatchNorm1d(400)
         self.bn10 = nn.BatchNorm1d(100)
 
-        self.pooling1 = nn.MaxPool2d(kernel_size = 2)
-        self.pooling2 = nn.MaxPool2d(kernel_size = 2)
+        self.pooling = nn.MaxPool2d(kernel_size = 2)
 
         self.fc1 = nn.Linear(768, 400)
         self.fc2 = nn.Linear(400, 100)
@@ -58,43 +57,37 @@ class ControlModel(nn.Module):
         x = self.gelu(x)
         x = self.bn2(x)
 
-        # x = self.conv3(x)
-        # x = self.gelu(x)
-        # x = self.bn3(x)
+        x = self.pooling(x)
+        #x = self.patch1(x)
 
-        x = self.pooling1(x)
+        x = self.conv3(x)
+        x = self.gelu(x)
+        x = self.bn3(x)
 
         x = self.conv4(x)
         x = self.gelu(x)
         x = self.bn4(x)
 
+        x = self.pooling(x)
+        #x = self.patch2(x)
+
         x = self.conv5(x)
         x = self.gelu(x)
         x = self.bn5(x)
 
-        # x = self.conv6(x)
-        # x = self.gelu(x)
-        # x = self.bn6(x)
-
-        x = self.pooling2(x)
-        
-        x = self.conv7(x)
+        x = self.conv6(x)
         x = self.gelu(x)
-        x = self.bn7(x)
-
-        x = self.conv8(x)
-        x = self.gelu(x)
-        x = self.bn8(x)
+        x = self.bn6(x)
 
         x = x.reshape(x.shape[0], -1)
 
         x = self.fc1(x)
         x = self.gelu(x)
-        x = self.bn9(x)
+        #x = self.bn7(x)
 
         x = self.fc2(x)
         x = self.gelu(x)
-        x = self.bn10(x)
+        #x = self.bn8(x)
 
         x = self.fc3(x)
         x = self.softmax(x)
@@ -105,13 +98,8 @@ class ControlModel(nn.Module):
 def run_model():
     start_time = time.time()
 
-    num_epochs = 10
-    
-    if torch.cuda.is_available():
-        print('Cuda is available!')
-        device = torch.device('cuda')
-    else:
-        device = torch.device('cpu')
+    num_epochs = 20
+    device = torch.device('cuda')
 
     # Loads the train and test data into PyTorch tensors
     training_data = datasets.CIFAR10(root = "data", train = True, download = True, transform = ToTensor())
@@ -120,15 +108,15 @@ def run_model():
     training_data, validation_set = random_split(training_data, [45000, 5000])
 
     # Loads the data into batches 
-    train_dataloader = DataLoader(training_data, batch_size = 200, shuffle = True)
-    valid_dataloader = DataLoader(validation_set, batch_size = 200, shuffle = True)
-    test_dataloader = DataLoader(test_data, batch_size = 200, shuffle = True)
+    train_dataloader = DataLoader(training_data, batch_size = 500, shuffle = True)
+    valid_dataloader = DataLoader(validation_set, batch_size = 500, shuffle = True)
+    test_dataloader = DataLoader(test_data, batch_size = 500, shuffle = True)
 
 
     model = ControlModel().to(device)
 
     loss_f = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr = 0.00003, weight_decay = 0)
+    optimizer = optim.Adam(model.parameters(), lr = 0.00001, weight_decay = 0)
     scheduler = lr_s.ReduceLROnPlateau(optimizer, 'min', patience = 3)
 
     old_loss = 10000

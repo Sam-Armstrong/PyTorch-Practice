@@ -132,3 +132,7 @@ data/
 .pickle
 *.pickle
 .pickle/
+*.pth
+*.pyc
+*.png
+
