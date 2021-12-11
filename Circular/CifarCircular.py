@@ -137,7 +137,11 @@ def train_model():
     start_time = time.time()
 
     num_epochs = 30
-    device = torch.device('cpu')
+    if torch.cuda.is_available():
+        print('Cuda is available!')
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
 
     # Loads the train and test data into PyTorch tensors
     training_data = datasets.CIFAR10(root = "data", train = True, download = True, transform = ToTensor())

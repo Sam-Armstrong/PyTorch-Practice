@@ -23,6 +23,9 @@ class ControlModel(nn.Module):
         self.conv4 = nn.Conv2d(6, 12, kernel_size = 3, padding = 1)
         self.conv5 = nn.Conv2d(12, 12, kernel_size = 3, padding = 1)
         self.conv6 = nn.Conv2d(12, 12, kernel_size = 2, padding = 0, stride = 2) # Patch encoding
+        
+        self.conv7 = nn.Conv2d(12, 12, kernel_size = 3, padding = 1)
+        self.conv8 = nn.Conv2d(12, 12, kernel_size = 3, padding = 1)
 
         self.gelu = nn.GELU()
         self.relu = nn.ReLU()
@@ -34,8 +37,10 @@ class ControlModel(nn.Module):
         self.bn4 = nn.BatchNorm2d(12)
         self.bn5 = nn.BatchNorm2d(12)
         self.bn6 = nn.BatchNorm2d(12)
-        self.bn7 = nn.BatchNorm1d(400)
-        self.bn8 = nn.BatchNorm1d(100)
+        self.bn7 = nn.BatchNorm2d(12)
+        self.bn8 = nn.BatchNorm2d(12)
+        self.bn9 = nn.BatchNorm1d(400)
+        self.bn10 = nn.BatchNorm1d(100)
 
         self.pooling1 = nn.MaxPool2d(kernel_size = 2)
         self.pooling2 = nn.MaxPool2d(kernel_size = 2)
@@ -72,16 +77,24 @@ class ControlModel(nn.Module):
         # x = self.bn6(x)
 
         x = self.pooling2(x)
+        
+        x = self.conv7(x)
+        x = self.gelu(x)
+        x = self.bn7(x)
+
+        x = self.conv8(x)
+        x = self.gelu(x)
+        x = self.bn8(x)
 
         x = x.reshape(x.shape[0], -1)
 
         x = self.fc1(x)
         x = self.gelu(x)
-        x = self.bn7(x)
+        x = self.bn9(x)
 
         x = self.fc2(x)
         x = self.gelu(x)
-        x = self.bn8(x)
+        x = self.bn10(x)
 
         x = self.fc3(x)
         x = self.softmax(x)
@@ -93,7 +106,12 @@ def run_model():
     start_time = time.time()
 
     num_epochs = 10
-    device = torch.device('cpu')
+    
+    if torch.cuda.is_available():
+        print('Cuda is available!')
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
 
     # Loads the train and test data into PyTorch tensors
     training_data = datasets.CIFAR10(root = "data", train = True, download = True, transform = ToTensor())
