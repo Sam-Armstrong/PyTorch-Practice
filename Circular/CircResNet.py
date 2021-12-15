@@ -110,7 +110,7 @@ def run_model():
 
     start_time = time.time()
 
-    num_epochs = 30
+    num_epochs = 10
     device = torch.device('cuda')
 
     # Loads the train and test data into PyTorch tensors
@@ -129,7 +129,7 @@ def run_model():
     params += model.parameters()
 
     loss_f = nn.MSELoss() #nn.CrossEntropyLoss()
-    optimizer = optim.Adam(params, lr = 1e-4, weight_decay = 1e-7) # Best lr = 0.001 # weight_decay = 1e-6
+    optimizer = optim.Adam(params, lr = 1e-2, weight_decay = 1e-7) # Best lr = 0.001 # weight_decay = 1e-6
 
     #scheduler = lr_s.MultiStepLR(optimizer, milestones = [20, 80], gamma = 0.1)
     scheduler = lr_s.ExponentialLR(optimizer, gamma = 0.9)
