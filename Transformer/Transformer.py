@@ -26,8 +26,12 @@ class SelfAttention(nn.Module):
 
         # Split embedding into self.heads pieces
         values = values.reshape(N, value_len, self.heads, self.head_dim)
-        keys = values.reshape(N, key_len, self.heads, self.head_dim)
-        queries = values.reshape(N, query_len, self.heads, self.head_dim)
+        keys = keys.reshape(N, key_len, self.heads, self.head_dim)
+        queries = query.reshape(N, query_len, self.heads, self.head_dim)
+
+        values = self.values(values)
+        keys = self.keys(keys)
+        queries = self.queries(queries)
 
         energy = torch.einsum('nqhd,nkhd->nhqk', [queries, keys])
         # queries: (N, query_len, heads, head_dim)
@@ -79,7 +83,7 @@ class Encoder(nn.Module):
         self.device = device
         self.word_embedding = nn.Embedding(vocab_size, embed_size)
         self.position_embedding = nn.Embedding(max_len, embed_size)
-        self.dropout == nn.Dropout(dropout)
+        self.dropout = nn.Dropout(dropout)
 
         self.layers = nn.ModuleList(
             [
@@ -89,7 +93,7 @@ class Encoder(nn.Module):
                     dropout,
                     forward_expansion,
                 )
-            ]
+            for _ in range(n_layers)]
         )
 
     def forward(self, x, mask):
@@ -142,7 +146,7 @@ class Decoder(nn.Module):
         x = self.dropout(self.word_embedding(x) + self.position_embedding(positions))
 
         for layer in self.layers:
-            x = layer(x. encoder_out, encoder_out, source_mask, target_mask)
+            x = layer(x, encoder_out, encoder_out, source_mask, target_mask)
 
         out = self.fc_out(x)
         return out
@@ -206,3 +210,20 @@ class Transformer(nn.Module):
         eng_src = self.encoder(src, src_mask)
         out = self.decoder(trg, eng_src, src_mask, trg_mask)
         return out
+
+if __name__ == '__main__':
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    x = torch.tensor([[1, 5, 6, 4, 3, 9, 5, 2, 0], [1, 8, 7, 3, 4, 5, 6, 7, 2]]).to(device)
+    target = torch.tensor([[1, 7, 4, 3, 5, 9, 2, 0], [1, 5, 6, 2, 4, 7, 6, 2]]).to(device)
+
+    src_pad_idx = 0
+    trg_pad_idx = 0
+    src_vocab_size = 10
+    trg_vocab_size = 10
+
+    model = Transformer(src_vocab_size, trg_vocab_size, src_pad_idx, trg_pad_idx).to(device)
+
+    out = model(x, target[:, :-1])
+    print(out.shape)
+
