@@ -5,9 +5,11 @@ import time
 
 import torch
 from torch import nn, Tensor
-import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from torch.utils.data import dataset
+from torchtext.datasets import WikiText2
+from torchtext.data.utils import get_tokenizer
+from torchtext.vocab import build_vocab_from_iterator
 
 class TransformerModel(nn.Module):
 
@@ -21,6 +23,7 @@ class TransformerModel(nn.Module):
         self.encoder = nn.Embedding(ntoken, d_model)
         self.d_model = d_model
         self.decoder = nn.Linear(d_model, ntoken)
+        self.softmax = nn.Softmax(dim = -1)
 
         self.init_weights()
 
@@ -44,6 +47,7 @@ class TransformerModel(nn.Module):
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src, src_mask)
         output = self.decoder(output)
+        #output = self.softmax(output)
         return output
 
 
@@ -56,7 +60,7 @@ class PositionalEncoding(nn.Module):
 
     def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
         super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
+        self.dropout = nn.Dropout(p = dropout)
 
         position = torch.arange(max_len).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
@@ -74,16 +78,12 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
-from torchtext.datasets import WikiText2
-from torchtext.data.utils import get_tokenizer
-from torchtext.vocab import build_vocab_from_iterator
-
 def tokenizer(sentence):
     return list(sentence.lower())
 
 start_time = time.time()
 
-train_iter = WikiText2(split='train')
+train_iter = WikiText2(split = 'train')
 #tokenizer = get_tokenizer('basic_english')
 vocab = build_vocab_from_iterator(map(tokenizer, train_iter), specials=['<unk>'])
 vocab.set_default_index(vocab['<unk>'])
@@ -119,7 +119,7 @@ def batchify(data: Tensor, bsz: int) -> Tensor:
     data = data.view(bsz, seq_len).t().contiguous()
     return data.to(device)
 
-batch_size = 20
+batch_size = 100
 eval_batch_size = 100
 train_data = batchify(train_data, batch_size)  # shape [seq_len, batch_size]
 val_data = batchify(val_data, eval_batch_size)
@@ -149,15 +149,16 @@ ntokens = len(vocab)  # size of vocabulary
 emsize = 400  # embedding dimension
 d_hid = 400  # dimension of the feedforward network model in nn.TransformerEncoder
 nlayers = 5  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
-nhead = 8  # number of heads in nn.MultiheadAttention
-dropout = 0.2  # dropout probability
+nhead = 1  # number of heads in nn.MultiheadAttention
+dropout = 0.4  # dropout probability
 model = TransformerModel(ntokens, emsize, nhead, d_hid, nlayers, dropout).to(device)
 
 criterion = nn.CrossEntropyLoss()
-lr = 1e-4  # learning rate
-optimizer = torch.optim.Adam(model.parameters(), lr = lr, weight_decay = 1e-6)
+lr = 3e-4  # learning rate
+optimizer = torch.optim.Adam(model.parameters(), lr = lr, weight_decay = 0)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma = 0.95)
 lookup = vocab.get_stoi()
+sm = nn.Softmax(dim = -1)
 
 def train(model: nn.Module) -> None:
     model.train()  # turn on train mode
@@ -197,41 +198,80 @@ def train(model: nn.Module) -> None:
             total_loss = 0
             start_time = time.time()
 
-    if epoch % 10 == 0:
+    if epoch % 1 == 0:
         #input_string = 'there are many things about horses that have been discovered in recent'
         #input_string = 'in a shocking finding, scientists discovered a herd of unicorns living in a remote, previously unexplored valley, in the andes mountains. even more surprising to the researchers was the fact that the unicorns spoke perfect english'
-        input_string = 'in a shocking finding, scientists discovered a herd of unicorns living in a remote, previously unexplored valley'
+        input_string = 'in a shocking finding, scientists discovered a herd of unicorns living in a remote, previously explored valley'
         
         int_to_word = vocab.get_itos() # Array of vocab words
-
-        tokens = tokenizer(input_string)
-        start_point = len(tokens) - bptt
-
-        input_tensor = torch.tensor(vocab(tokenizer(input_string)), dtype = torch.long).to(device)
-        src_mask = generate_square_subsequent_mask(len(tokens)).to(device)
-
-        output = model(input_tensor, src_mask)
-        output = torch.argmax(output, dim = -1)
-
         sentence = ''
-        for i in range(output.shape[0]):
-            word = int_to_word[output[i, -1].item()]
-            sentence += word
-            #sentence += ' '
+        word = ''
+        i = 0
 
-        print(sentence)
-        print('')
+        #start_point = len(tokens) - bptt
+        with torch.no_grad():
+            while word != '.':
+                i += 1
 
-        output = torch.flatten(output) #
+                tokens = tokenizer(input_string)
 
-        sentence = ''
-        for i in range(output.shape[0]):
-            word = int_to_word[output[i].item()]
-            #word = int_to_word[output[i, -1].item()]
-            sentence += word
-            #sentence += ' '
+                input_tensor = torch.tensor(vocab(tokens), dtype = torch.long).to(device) # [vocab(tokens)]
+                #print(input_tensor.shape)
+                src_mask = generate_square_subsequent_mask(len(tokens)).to(device)
+                #src_mask = torch.ones((1, 1), dtype = torch.float).to(device) #ones # Works best
+                #print(src_mask.shape)
 
-        print(sentence)
+                output = model(input_tensor, src_mask)
+
+                # Works the best
+                output = torch.sum(output, dim = 0)
+                output = output[-1]
+                word_idx = torch.argmax(output, dim = 0).item()
+
+                # Performs worse
+                # output = torch.sum(output, dim = 0)
+                # output = torch.sum(output, dim = 0)
+                # word_idx = torch.argmax(output, dim = 0).item()
+
+                word = int_to_word[word_idx]
+                sentence += word
+                #sentence += ' '
+                input_string += word
+                #input_string += ' '
+
+                # if i == 1:
+                #     print(torch.max(output).item())
+
+                if i > 70:
+                    break
+
+        print(input_string)
+        print('Sentence: ', sentence)
+
+        #output = torch.argmax(output, dim = -1)
+
+        # sentence = ''
+        # for i in range(output.shape[0]):
+        #     word = int_to_word[output[i, -1].item()]
+        #     sentence += word
+        #     #sentence += ' '
+
+        # print('')
+
+        # output = torch.flatten(output) #
+
+        # sentence = ''
+        # for i in range(output.shape[0]):
+        #     word = int_to_word[output[i].item()]
+        #     #word = int_to_word[output[i, -1].item()]
+        #     if '.' in word:
+        #         sentence += '.'
+        #         break
+        #     sentence += word
+        #     #sentence += ' '
+
+        # print(sentence)
+        # print(len(sentence))
 
 def evaluate(model: nn.Module, eval_data: Tensor) -> float:
     model.eval()  # turn on evaluation mode
@@ -275,5 +315,7 @@ print('=' * 89)
 print(f'| End of training | test loss {test_loss:5.2f} | '
       f'test ppl {test_ppl:8.2f}')
 print('=' * 89)
+
+torch.save(model, 'text-generator.pickle')
 
 print('Finished in %s seconds' % str(round(time.time() - start_time, 2)))
