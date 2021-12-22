@@ -78,13 +78,13 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
-def tokenizer(sentence):
-    return list(sentence.lower())
+# def tokenizer(sentence):
+#     return list(sentence.lower())
 
 start_time = time.time()
 
 train_iter = WikiText2(split = 'train')
-#tokenizer = get_tokenizer('basic_english')
+tokenizer = get_tokenizer('basic_english')
 vocab = build_vocab_from_iterator(map(tokenizer, train_iter), specials=['<unk>'])
 vocab.set_default_index(vocab['<unk>'])
 print(len(vocab))
@@ -119,8 +119,8 @@ def batchify(data: Tensor, bsz: int) -> Tensor:
     data = data.view(bsz, seq_len).t().contiguous()
     return data.to(device)
 
-batch_size = 100
-eval_batch_size = 100
+batch_size = 20
+eval_batch_size = 20
 train_data = batchify(train_data, batch_size)  # shape [seq_len, batch_size]
 val_data = batchify(val_data, eval_batch_size)
 test_data = batchify(test_data, eval_batch_size)
@@ -154,8 +154,8 @@ dropout = 0.4  # dropout probability
 model = TransformerModel(ntokens, emsize, nhead, d_hid, nlayers, dropout).to(device)
 
 criterion = nn.CrossEntropyLoss()
-lr = 3e-4  # learning rate
-optimizer = torch.optim.Adam(model.parameters(), lr = lr, weight_decay = 0)
+lr = 1e-5  # learning rate
+optimizer = torch.optim.Adam(model.parameters(), lr = lr, weight_decay = 3e-7)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma = 0.95)
 lookup = vocab.get_stoi()
 sm = nn.Softmax(dim = -1)
@@ -199,26 +199,27 @@ def train(model: nn.Module) -> None:
             start_time = time.time()
 
     if epoch % 1 == 0:
-        #input_string = 'there are many things about horses that have been discovered in recent'
-        #input_string = 'in a shocking finding, scientists discovered a herd of unicorns living in a remote, previously unexplored valley, in the andes mountains. even more surprising to the researchers was the fact that the unicorns spoke perfect english'
-        input_string = 'in a shocking finding, scientists discovered a herd of unicorns living in a remote, previously explored valley'
+        input_string = 'there are many things about horses that have been discovered in recent '
+        #input_string = 'in a shocking finding, scientists discovered a herd of unicorns living in a remote, previously unexplored valley, in the andes mountains. even more surprising to the researchers was the fact that the unicorns spoke perfect english. '
+        #input_string = 'in a shocking finding, scientists discovered a herd of unicorns living in a remote, previously explored valley'
         
         int_to_word = vocab.get_itos() # Array of vocab words
         sentence = ''
         word = ''
         i = 0
+        unk_idx = lookup['<unk>']
 
         #start_point = len(tokens) - bptt
         with torch.no_grad():
-            while word != '.':
+            while True == True: #word != '.':
                 i += 1
 
                 tokens = tokenizer(input_string)
 
-                input_tensor = torch.tensor(vocab(tokens), dtype = torch.long).to(device) # [vocab(tokens)]
+                input_tensor = torch.tensor([vocab(tokens)], dtype = torch.long).to(device) # [vocab(tokens)]
                 #print(input_tensor.shape)
-                src_mask = generate_square_subsequent_mask(len(tokens)).to(device)
-                #src_mask = torch.ones((1, 1), dtype = torch.float).to(device) #ones # Works best
+                #src_mask = generate_square_subsequent_mask(len(tokens)).to(device)
+                src_mask = torch.zeros((1, 1), dtype = torch.float).to(device) #ones # Works best
                 #print(src_mask.shape)
 
                 output = model(input_tensor, src_mask)
@@ -226,7 +227,13 @@ def train(model: nn.Module) -> None:
                 # Works the best
                 output = torch.sum(output, dim = 0)
                 output = output[-1]
-                word_idx = torch.argmax(output, dim = 0).item()
+                #word_idx = torch.argmax(output, dim = 0).item()
+                top_k = torch.topk(output, 2, dim = 0).indices
+
+                if top_k[0].item() != unk_idx:
+                    word_idx = top_k[0].item()
+                else:
+                    word_idx = top_k[1].item()
 
                 # Performs worse
                 # output = torch.sum(output, dim = 0)
@@ -235,14 +242,14 @@ def train(model: nn.Module) -> None:
 
                 word = int_to_word[word_idx]
                 sentence += word
-                #sentence += ' '
+                sentence += ' '
                 input_string += word
-                #input_string += ' '
+                input_string += ' '
 
                 # if i == 1:
                 #     print(torch.max(output).item())
 
-                if i > 70:
+                if i > 25: #70
                     break
 
         print(input_string)

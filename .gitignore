@@ -135,4 +135,7 @@ data/
 *.pth
 *.pyc
 *.png
-
+*.jar
+*.png
+save_model/
+.data/

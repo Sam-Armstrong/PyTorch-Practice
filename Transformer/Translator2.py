@@ -10,14 +10,15 @@ from torch import nn, Tensor
 import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from torch.utils.data import dataset
-from torchtext.datasets import WikiText2
+from torchtext.datasets import Multi30k
 from torchtext.data.utils import get_tokenizer
 from torchtext.vocab import build_vocab_from_iterator
+import spacy
 
 
 class TransformerModel(nn.Module):
 
-    def __init__(self, ntoken: int, d_model: int, nhead: int, d_hid: int,
+    def __init__(self, src_ntoken: int, trg_ntoken: int, d_model: int, nhead: int, d_hid: int,
                  nlayers: int, dropout: float = 0.5):
         super().__init__()
         self.model_type = 'Transformer'
@@ -84,14 +85,31 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     bptt = 35
 
-    train_iter = WikiText2(split = 'train')
-    tokenizer = get_tokenizer('basic_english')
-    vocab = build_vocab_from_iterator(map(tokenizer, train_iter), specials=['<unk>'])
-    vocab.set_default_index(vocab['<unk>'])
+    spacy_ger = spacy.load('de_core_news_sm')
+    spacy_eng = spacy.load('en_core_web_sm')
 
-    def data_process(raw_text_iter: dataset.IterableDataset) -> Tensor:
+    def tokenize_ger(text):
+        return [tok.text for tok in spacy_ger.tokenizer(text)]
+
+    def tokenize_eng(text):
+        return [tok.text for tok in spacy_eng.tokenizer(text)]
+
+    train_iter = Multi30k(split = 'train', language_pair = ('de', 'en'))
+    #tokenizer = get_tokenizer('basic_english')
+    german_vocab = build_vocab_from_iterator(map(tokenize_ger, train_iter), specials=['<unk>'])
+    german_vocab.set_default_index(german_vocab['<unk>'])
+    train_iter = Multi30k(split = 'train', language_pair = ('de', 'en'))
+    english_vocab = build_vocab_from_iterator(map(tokenize_eng, train_iter), specials=['<unk>'])
+    english_vocab.set_default_index(english_vocab['<unk>'])
+
+    def data_process_german(raw_text_iter: dataset.IterableDataset) -> Tensor:
         """Converts raw text into a flat Tensor."""
-        data = [torch.tensor(vocab(tokenizer(item)), dtype = torch.long) for item in raw_text_iter]
+        data = [torch.tensor(german_vocab(tokenize_ger(item)), dtype = torch.long) for item in raw_text_iter]
+        return torch.cat(tuple(filter(lambda t: t.numel() > 0, data)))
+
+    def data_process_english(raw_text_iter: dataset.IterableDataset) -> Tensor:
+        """Converts raw text into a flat Tensor."""
+        data = [torch.tensor(english_vocab(tokenize_eng(item)), dtype = torch.long) for item in raw_text_iter]
         return torch.cat(tuple(filter(lambda t: t.numel() > 0, data)))
 
     def batchify(data: Tensor, bsz: int) -> Tensor:
@@ -127,10 +145,10 @@ if __name__ == '__main__':
 
     # train_iter was "consumed" by the process of building the vocab,
     # so we have to create it again
-    train_iter, val_iter, test_iter = WikiText2()
-    train_data = data_process(train_iter)
-    val_data = data_process(val_iter)
-    test_data = data_process(test_iter)
+    train_iter, val_iter, test_iter = Multi30k(language_pair = ('de', 'en'))
+    # train_data = data_process(train_iter)
+    # val_data = data_process(val_iter)
+    # test_data = data_process(test_iter)
 
     batch_size = 50 #20
     eval_batch_size = 50 #10
@@ -138,13 +156,14 @@ if __name__ == '__main__':
     val_data = batchify(val_data, eval_batch_size)
     test_data = batchify(test_data, eval_batch_size)
 
-    ntokens = len(vocab)  # size of vocabulary
+    src_ntokens = len(german_vocab)  # size of vocabulary
+    trg_ntokens = len(english_vocab)
     emsize = 200  # embedding dimension
     d_hid = 200  # dimension of the feedforward network model in nn.TransformerEncoder
     nlayers = 2  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
     nhead = 2  # number of heads in nn.MultiheadAttention
     dropout = 0.2  # dropout probability
-    model = TransformerModel(ntokens, emsize, nhead, d_hid, nlayers, dropout).to(device)
+    model = TransformerModel(src_ntokens, trg_ntokens, emsize, nhead, d_hid, nlayers, dropout).to(device)
 
     criterion = nn.CrossEntropyLoss()
     lr = 3e-5 #5.0  # learning rate
@@ -199,7 +218,7 @@ if __name__ == '__main__':
         return total_loss / (len(eval_data) - 1)
 
     best_val_loss = float('inf')
-    epochs = 30
+    epochs = 3
     best_model = None
 
     for epoch in range(1, epochs + 1):
