@@ -4,12 +4,18 @@ import copy
 import time
 
 import torch
-from torch import nn, Tensor
+from torch import Tensor
+import torch.optim as optim
+import torch.nn as nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from torch.utils.data import dataset
 from torchtext.datasets import WikiText2
 from torchtext.data.utils import get_tokenizer
 from torchtext.vocab import build_vocab_from_iterator
+
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
 
 class TransformerModel(nn.Module):
 
@@ -119,8 +125,8 @@ def batchify(data: Tensor, bsz: int) -> Tensor:
     data = data.view(bsz, seq_len).t().contiguous()
     return data.to(device)
 
-batch_size = 20
-eval_batch_size = 20
+batch_size = 50
+eval_batch_size = 50
 train_data = batchify(train_data, batch_size)  # shape [seq_len, batch_size]
 val_data = batchify(val_data, eval_batch_size)
 test_data = batchify(test_data, eval_batch_size)
@@ -145,25 +151,26 @@ def get_batch(source: Tensor, i: int) -> Tuple[Tensor, Tensor]:
 
     return data, target
 
+warmup_steps = 75
 ntokens = len(vocab)  # size of vocabulary
-emsize = 400  # embedding dimension
+emsize = 400  # embedding dimension # d_model
 d_hid = 400  # dimension of the feedforward network model in nn.TransformerEncoder
 nlayers = 5  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
 nhead = 1  # number of heads in nn.MultiheadAttention
-dropout = 0.4  # dropout probability
+dropout = 0.1  # dropout probability
 model = TransformerModel(ntokens, emsize, nhead, d_hid, nlayers, dropout).to(device)
 
 criterion = nn.CrossEntropyLoss()
-lr = 1e-5  # learning rate
-optimizer = torch.optim.Adam(model.parameters(), lr = lr, weight_decay = 3e-7)
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma = 0.95)
+lr = 0 #1e-5  # learning rate
+optimizer = optim.Adam(model.parameters(), lr = lr, weight_decay = 0, betas = (0.9, 0.98), eps = 1e-9)
+scheduler = optim.lr_scheduler.StepLR(optimizer, 1.0, gamma = 0.95)
 lookup = vocab.get_stoi()
-sm = nn.Softmax(dim = -1)
+#sm = nn.Softmax(dim = -1)
 
 def train(model: nn.Module) -> None:
     model.train()  # turn on train mode
     total_loss = 0.
-    log_interval = 200
+    log_interval = 100
     start_time = time.time()
     src_mask = generate_square_subsequent_mask(bptt).to(device)
 
@@ -188,7 +195,8 @@ def train(model: nn.Module) -> None:
 
         total_loss += loss.item()
         if batch % log_interval == 0 and batch > 0:
-            lr = scheduler.get_last_lr()[0]
+            #lr = scheduler.get_last_lr()[0]
+            lr = get_lr(optimizer)
             ms_per_batch = (time.time() - start_time) * 1000 / log_interval
             cur_loss = total_loss / log_interval
             ppl = math.exp(cur_loss)
@@ -296,11 +304,16 @@ def evaluate(model: nn.Module, eval_data: Tensor) -> float:
     return total_loss / (len(eval_data) - 1)
 
 best_val_loss = float('inf')
-epochs = 360
+epochs = 1000
 best_model = None
 
 for epoch in range(1, epochs + 1):
     epoch_start_time = time.time()
+
+    # Change the learning rate according to warmup step formula
+    for g in optimizer.param_groups:
+        g['lr'] = (1 / math.sqrt(emsize)) * min((1 / math.sqrt(epoch)), epoch * (1 / math.sqrt(warmup_steps ** 3)))
+
     train(model)
     val_loss = evaluate(model, val_data)
     val_ppl = math.exp(val_loss)
