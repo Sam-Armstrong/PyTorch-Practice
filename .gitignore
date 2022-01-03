@@ -139,3 +139,4 @@ data/
 *.png
 save_model/
 .data/
+Transformer/TextGeneratorWorking.py
