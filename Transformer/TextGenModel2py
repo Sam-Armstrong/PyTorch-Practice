@@ -12,6 +12,7 @@ from torch.utils.data import dataset
 from torchtext.datasets import WikiText2, WikiText103
 from torchtext.data.utils import get_tokenizer
 from torchtext.vocab import build_vocab_from_iterator
+from SelfAttention import SelfAttention
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -22,59 +23,6 @@ def generate_square_subsequent_mask(sz: int) -> Tensor:
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group['lr']
-
-class SelfAttention(nn.Module):
-    def __init__(self, embed_dim, heads, dropout = 0) -> None:
-        super(SelfAttention, self).__init__()
-
-        self.embed_dim = embed_dim
-        self.heads = heads
-        self.head_dim = embed_dim // heads
-
-        assert (self.head_dim * heads == embed_dim), 'Embed size needs to be divisible by heads'
-
-        # Switch to head_dim -> head_dim
-        self.values = nn.Linear(self.head_dim, self.head_dim, bias = False)
-        self.keys = nn.Linear(self.head_dim, self.head_dim, bias = False)
-        self.queries = nn.Linear(self.head_dim, self.head_dim, bias = False)
-        self.fc_out = nn.Linear(self.embed_dim, embed_dim)
-        #print(embed_dim)
-
-        self.values_embed = nn.Embedding(self.embed_dim, self.heads)
-        self.keys_embed = nn.Embedding(self.embed_dim, self.heads)
-        self.queries_embed = nn.Embedding(self.embed_dim, self.heads)
-        
-
-    def forward(self, values, keys, queries, src_mask):
-        N = queries.shape[1]
-        value_len, key_len, query_len = values.shape[0], keys.shape[0], queries.shape[0]
-
-        # Split embedding into self.heads pieces
-        values = values.reshape(N, value_len, self.heads, self.head_dim)
-        keys = keys.reshape(N, key_len, self.heads, self.head_dim)
-        queries = queries.reshape(N, query_len, self.heads, self.head_dim)
-
-        values = self.values(values)
-        keys = self.keys(keys)
-        queries = self.queries(queries)
-
-        energy = torch.einsum('nqhd,nkhd->nhqk', [queries, keys])
-        # queries: (N, query_len, heads, head_dim)
-        # keys: (N, key_len, heads, head_dim)
-        # energy: (N, heads, query_len, key_len)
-
-        if src_mask is not None:
-            energy = energy.masked_fill(src_mask == 0, float('-1e20'))
-
-        attention = torch.softmax(energy / (self.embed_dim ** (1/2)), dim = 3)
-
-        out = torch.einsum('nhql,nlhd->nqhd', [attention, values]).reshape(query_len, N, self.heads * self.head_dim) # Performs the matmul then concatenates
-        # attention: (N, heads, query_len, key_len)
-        # values: (N, value_len, heads, heads_dim)
-        # out: (N, query_len, heads, head_dim) then flatten last two dimensions
-
-        out = self.fc_out(out)
-        return out
 
 class EncoderLayer(nn.Module):
     def __init__(self, embed_dim, heads, d_hid, dropout = 0) -> None: # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -87,13 +35,13 @@ class EncoderLayer(nn.Module):
         self.ln2 = nn.LayerNorm(embed_dim)
         self.activation =  nn.SELU()
 
-    def forward(self, values, keys, queries, src_mask):
+    def forward(self, x, src_mask):
         # values = values.reshape(values.shape[1], values.shape[0], values.shape[2])
         # keys = keys.reshape(keys.shape[1], keys.shape[0], keys.shape[2])
         # queries = queries.reshape(queries.shape[1], queries.shape[0], queries.shape[2])
 
-        res = values.clone()
-        x = self.attention(values, keys, queries, src_mask)
+        res = x.clone()
+        x = self.attention(x, src_mask)
         x += res
         x = self.ln1(x)
 
@@ -114,7 +62,7 @@ class PositionalEncoding(nn.Module):
 
         position = torch.arange(max_len).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, embed_dim, 2) * (-math.log(10000.0) / embed_dim))
-        self.pe = torch.zeros(max_len, 1, embed_dim) # 1
+        self.pe = torch.zeros(max_len, 1, embed_dim).to(device) # 1
         self.pe[:, 0, 0::2] = torch.sin(position * div_term)
         self.pe[:, 0, 1::2] = torch.cos(position * div_term)
         #self.pe = self.pe.repeat(1, batch_size, 1)
@@ -125,19 +73,15 @@ class PositionalEncoding(nn.Module):
         Args:
             x: Tensor, shape [seq_len, batch_size, embedding_dim]
         """
-        print(x) ###Issue here
-        print(x.shape)
-        print(self.pe[:x.shape[0]].shape)
-        print(x)
-        print(self.pe[:x.shape[0]])
-        #x = x + self.pe[:x.size(0)]
+        x = x + self.pe[:x.size(0)]
         return self.dropout(x)
 
 class TextGen(nn.Module):
     def __init__(self, embed_dim, heads, d_hid, n_layers, vocab_size, seq_len, dropout = 0) -> None:
         super(TextGen, self).__init__()
         self.embedding = nn.Embedding(vocab_size, embed_dim) # (seq_len, embed_dim)
-        self.pe = nn.Embedding(seq_len, embed_dim)
+        #self.pe = nn.Embedding(seq_len, embed_dim)
+        self.pe = PositionalEncoding(embed_dim)
         self.layers = [EncoderLayer(embed_dim, heads, d_hid, dropout = dropout).to(device) for _ in range(n_layers)]
         self.fc_out = nn.Linear(embed_dim, vocab_size)
         self.softmax = nn.Softmax(dim = -1)
@@ -159,17 +103,17 @@ class TextGen(nn.Module):
         batch_size = x.shape[1]
         seq_len = x.shape[0]
 
-        positions = torch.arange(0, seq_len).expand(batch_size, seq_len).to(self.device)
-        positions = positions.reshape(positions.shape[1], positions.shape[0])
+        # positions = torch.arange(0, seq_len).expand(batch_size, seq_len).to(self.device)
+        # positions = positions.reshape(positions.shape[1], positions.shape[0]) # positions shape: (seq_len, batch_size)
 
         x = self.embedding(x) / math.sqrt(self.embed_dim)
-        x += self.pe(positions) # Add the positional encoding
-        # x shape: (200, 10, 400)
+        x = self.pe(x) # Add the positional encoding #positions
+        # x shape: (seq_len, batch_size, emsize)
 
-        #print(x)
+        x = x.reshape(batch_size, seq_len, emsize) # x shape: (batch_size, seq_len, emsize)
 
         for layer in self.layers:
-            x = layer(x, x, x, src_mask)
+            x = layer(x, src_mask)
 
         x = self.fc_out(x)
         x = self.softmax(x)
@@ -216,13 +160,13 @@ if __name__ == '__main__':
         data = data.view(bsz, seq_len).t().contiguous()
         return data.to(device)
 
-    batch_size = 100
+    batch_size = 50
     bptt = 200
     warmup_steps = 200 #200
     ntokens = len(vocab)  # size of vocabulary
-    emsize = 400  # embedding dimension # d_model
-    d_hid = 400  # dimension of the feedforward network model in nn.TransformerEncoder
-    nlayers = 2  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
+    emsize = 200  # embedding dimension # d_model
+    d_hid = 200  # dimension of the feedforward network model in nn.TransformerEncoder
+    nlayers = 1  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
     nhead = 1  # number of heads in nn.MultiheadAttention
     dropout = 0.1  # dropout probability
 

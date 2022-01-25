@@ -23,8 +23,8 @@ class TransformerModel(nn.Module):
                  nlayers: int, dropout: float = 0.5):
         super().__init__()
         self.model_type = 'Transformer'
-        self.pos_encoder = PositionalEncoding(d_model, dropout) ##
-        encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout, activation = nn.functional.selu)
+        self.pos_encoder = PositionalEncoding(d_model, dropout)
+        encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.encoder = nn.Embedding(ntoken, d_model)
         self.d_model = d_model
@@ -51,10 +51,10 @@ class TransformerModel(nn.Module):
             src_mask: Tensor, shape [seq_len, seq_len]
 
         Returns:
-            output Tensor of shape [seq_len, batch_size, emsize]
+            output Tensor of shape [seq_len, batch_size, ntoken]
         """
         #print(src)
-        src = self.encoder(src) * math.sqrt(self.d_model) # *
+        src = self.encoder(src) * math.sqrt(self.d_model)
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src, src_mask)
         output = self.decoder(output)
@@ -64,9 +64,7 @@ class TransformerModel(nn.Module):
 
 def generate_square_subsequent_mask(sz: int) -> Tensor:
     """Generates an upper-triangular matrix of -inf, with zeros on diag."""
-    x = torch.triu(torch.ones(sz, sz) * float('-inf'), diagonal = 1)
-    #x[:, -20:-1] = 0
-    return x
+    return torch.triu(torch.ones(sz, sz) * float('-inf'), diagonal = 1)
 
 
 class PositionalEncoding(nn.Module):
@@ -98,8 +96,8 @@ start_time = time.time()
 
 train_iter = WikiText2(split = 'train')  #WikiText103(split = 'train') #WikiText2(split = 'train') 
 tokenizer = get_tokenizer('basic_english')
-vocab = build_vocab_from_iterator(map(tokenizer, train_iter))#, specials = ['<unk>'])
-vocab.set_default_index(vocab['a'])
+vocab = build_vocab_from_iterator(map(tokenizer, train_iter), specials = ['<unk>'])
+vocab.set_default_index(vocab['<unk>'])
 print(len(vocab))
 
 def data_process(raw_text_iter: dataset.IterableDataset) -> Tensor:
@@ -133,16 +131,7 @@ def batchify(data: Tensor, bsz: int) -> Tensor:
     return data.to(device)
 
 batch_size = 50
-bptt = 200
-warmup_steps = 100 #200
-ntokens = len(vocab)  # size of vocabulary
-emsize = 200  # embedding dimension # d_model
-d_hid = 250  # dimension of the feedforward network model in nn.TransformerEncoder
-nlayers = 3  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
-nhead = 5  # number of heads in nn.MultiheadAttention
-dropout = 0.1  # dropout probability
-
-
+#eval_batch_size = 50
 train_data = batchify(train_data, batch_size)  # shape [seq_len, batch_size]
 val_data = batchify(val_data, batch_size)
 test_data = batchify(test_data, batch_size)
@@ -150,6 +139,7 @@ test_data = batchify(test_data, batch_size)
 # train_mean = torch.mean(train_data, dim = 1) ##
 # train_std = torch.std(train_data, dim = 1)
 
+bptt = 200
 def get_batch(source: Tensor, i: int) -> Tuple[Tensor, Tensor]:
     """
     Args:
@@ -166,6 +156,13 @@ def get_batch(source: Tensor, i: int) -> Tuple[Tensor, Tensor]:
 
     return data, target
 
+warmup_steps = 100 #200
+ntokens = len(vocab)  # size of vocabulary
+emsize = 200  # embedding dimension # d_model
+d_hid = 300  # dimension of the feedforward network model in nn.TransformerEncoder
+nlayers = 2  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
+nhead = 4  # number of heads in nn.MultiheadAttention
+dropout = 0.1  # dropout probability
 model = TransformerModel(ntokens, emsize, nhead, d_hid, nlayers, dropout).to(device)
 
 criterion = nn.CrossEntropyLoss()
@@ -277,8 +274,6 @@ def train(model: nn.Module) -> None:
                 else:
                     word_idx = top_k[1].item()
 
-                #word_idx = top_k[0].item()
-
                 # Performs worse
                 # output = torch.sum(output, dim = 0)
                 # output = torch.sum(output, dim = 0)
@@ -293,7 +288,7 @@ def train(model: nn.Module) -> None:
                 # if i == 1:
                 #     print(torch.max(output).item())
 
-                if i > 125: #25
+                if i > 25: #25
                     break
 
         print(input_string)
@@ -340,7 +335,7 @@ def evaluate(model: nn.Module, eval_data: Tensor) -> float:
     return total_loss / (len(eval_data) - 1)
 
 best_val_loss = float('inf')
-epochs = 5000
+epochs = 400
 best_model = None
 
 for epoch in range(1, epochs + 1):
@@ -348,7 +343,7 @@ for epoch in range(1, epochs + 1):
 
     # Change the learning rate according to warmup step formula
     for g in optimizer.param_groups:
-        g['lr'] = 1 * (1 / math.sqrt(emsize)) * min((1 / math.sqrt(epoch)), epoch * (1 / math.sqrt(warmup_steps ** 3)))
+        g['lr'] = 0.1 * (1 / math.sqrt(emsize)) * min((1 / math.sqrt(epoch)), epoch * (1 / math.sqrt(warmup_steps ** 3)))
         #g['weight_decay'] = 0.005 * (1 / math.sqrt(emsize)) * min((1 / math.sqrt(epoch)), epoch * (1 / math.sqrt(warmup_steps ** 3)))
 
     train(model)

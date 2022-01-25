@@ -24,6 +24,8 @@ class SelfAttention(nn.Module):
         N = query.shape[0]
         value_len, key_len, query_len = values.shape[1], keys.shape[1], query.shape[1]
 
+        # v/k/q shape: (batch_size, seq_len, emsize)
+
         # Split embedding into self.heads pieces
         values = values.reshape(N, value_len, self.heads, self.head_dim)
         keys = keys.reshape(N, key_len, self.heads, self.head_dim)
@@ -115,14 +117,14 @@ class DecoderBlock(nn.Module):
         self.norm = nn.LayerNorm(embed_size)
         self.dropout = nn.Dropout(dropout)
 
-        self.tansformer_block = TransformerBlock(
+        self.transformer_block = TransformerBlock(
             embed_size, heads, dropout, forward_expansion
         )
 
     def forward(self, x, value, key, source_mask, target_mask):
         attention = self.attention(x, x, x, target_mask)
         query = self.dropout(self.norm(attention + x))
-        out = self.tansformer_block(value, key, query, source_mask)
+        out = self.transformer_block(value, key, query, source_mask)
         return out
 
 class Decoder(nn.Module):
